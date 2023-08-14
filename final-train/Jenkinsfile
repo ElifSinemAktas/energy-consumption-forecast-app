@@ -1,0 +1,17 @@
+pipeline{
+   agent any
+   triggers {
+        cron('0 0 * * 1')
+    }
+   stages{
+		stage(" Install Train Files on Prod Server and Run Files") {
+            when {
+		        branch "master"
+	        }
+           steps {
+                ansiblePlaybook credentialsId: 'jenkins_pk', disableHostKeyChecking: true, installation: 'Ansible',
+                inventory: 'hosts', playbook: 'playbooks/install-train-on-prod.yaml'
+            }
+        }
+   }
+}

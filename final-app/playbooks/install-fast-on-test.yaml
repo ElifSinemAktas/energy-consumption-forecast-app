@@ -1,0 +1,48 @@
+- hosts: test
+  become: yes
+  tasks:
+    - name: Install rsync
+      yum:
+        name: rsync
+        state: latest
+
+    - name: Copy files to remote server
+      synchronize:
+        src: ../src
+        dest: /opt/fastapi
+
+    - name: Copy service file
+      synchronize:
+        src: test/fastapi.service
+        dest: /etc/systemd/system/fastapi.service
+        
+    - name: Upgrade pip
+      pip:
+        name: pip
+        state: latest
+        executable: pip3
+
+    - name: Install pip requirements
+      pip:
+        requirements: /opt/fastapi/src/app/requirements.txt
+
+    - name: Env variables for fastapi
+      shell: |
+        export LC_ALL=en_US.utf-8
+        export LANG=en_US.utf-8
+
+    - name: Check if Service Exists
+      stat: path=/etc/systemd/system/fastapi.service
+      register: service_status
+
+    - name: Stop Service
+      service: name=fastapi state=stopped
+      when: service_status.stat.exists
+      register: service_stopped
+
+    - name: Start fastapi
+      systemd:
+        name: fastapi
+        daemon_reload: yes
+        state: started
+        enabled: yes

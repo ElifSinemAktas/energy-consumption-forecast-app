@@ -1,0 +1,11 @@
+[Unit]
+Description=Gunicorn
+Documentation=https://docs.gunicorn.org/en/stable/deploy.html
+
+[Service]
+Type=simple
+ExecStart=/bin/bash -c 'cd /opt/fastapi/src/app/ && /usr/local/bin/gunicorn main:app --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000'
+ExecStop=pkill -f python3
+
+[Install]
+WantedBy=multi-user.target

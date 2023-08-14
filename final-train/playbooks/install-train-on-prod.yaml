@@ -1,0 +1,46 @@
+- hosts: prod
+  become: yes
+  tasks:
+    - name: Install rsync
+      yum:
+        name: rsync
+        state: latest
+
+    - name: Copy files to remote server
+      synchronize:
+        src: ../app
+        dest: /opt/train/
+    
+    - name: Upgrade pip
+      pip:
+        name: pip
+        state: latest
+        executable: pip3
+    
+    - name: Display installed packages before installing requirements
+      shell: pip3 list
+      register: installed_packages_before
+
+    - name: Install pip requirements
+      pip:
+        requirements: /opt/train/app/requirements.txt
+        executable: pip3
+
+    - name: Display installed packages after installing requirements
+      shell: pip3 list
+      register: installed_packages_after
+
+    - name: Debug installed packages
+      debug:
+        var: installed_packages_before.stdout_lines
+
+    - name: Env variables for fastapi
+      shell: |
+        export LC_ALL=en_US.utf-8
+        export LANG=en_US.utf-8
+
+    - name: Go to the folder and execute train command
+      command: chdir=/opt/train/app/ python3 train_consumption_dynamic.py
+    
+    - name: Go to the folder and execute insert command
+      command: chdir=/opt/train/app/ python3 insert_train_data_to_db_dynamic.py

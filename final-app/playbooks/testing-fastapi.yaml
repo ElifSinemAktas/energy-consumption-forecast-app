@@ -1,0 +1,30 @@
+- hosts: test
+  become: yes
+  tasks:
+    - name: Install rsync
+      yum:
+        name: rsync
+        state: latest
+
+    - name: Copy files to remote server
+      synchronize:
+        src: ../src
+        dest: /opt/fastapi
+
+    - name: Upgrade pip
+      pip:
+        name: pip
+        state: latest
+        executable: pip3
+
+    - name: Install pip requirements
+      pip:
+        requirements: /opt/fastapi/src/app/requirements.txt
+
+    - name: Env variables for fastapi
+      shell: |
+        export LC_ALL=en_US.utf-8
+        export LANG=en_US.utf-8
+
+    - name: Run Test script
+      command: bash -c 'cd /opt/fastapi/src/app/ && /usr/local/bin/pytest'

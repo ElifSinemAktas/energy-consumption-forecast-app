@@ -1,0 +1,172 @@
+version: '3.7'
+networks:
+    mlops-net:
+        ipam:
+            config:
+                - subnet: 10.0.2.0/16
+services:
+    minio:
+        restart: always
+        image: minio/minio:RELEASE.2021-10-13T00-23-17Z
+        container_name: mlflow_s3
+        ports:
+            - "9000:9000"
+            - "9001:9001"
+        networks:
+            mlops-net:
+                ipv4_address: 10.0.2.9
+        env_file:
+            - .env
+        command: server /data --console-address ':9001' --address ':9000'
+        environment:
+            - MINIO_ROOT_USER=${AWS_ACCESS_KEY_ID}
+            - MINIO_ROOT_PASSWORD=${AWS_SECRET_ACCESS_KEY}
+        volumes:
+            - minio_data:/data
+
+    mc:
+        image: minio/mc:RELEASE.2021-10-07T04-19-58Z
+        depends_on:
+            - minio
+        container_name: mc
+        networks:
+            mlops-net:
+                ipv4_address: 10.0.2.2
+        env_file:
+            - .env
+        entrypoint: >
+            /bin/sh -c "
+            /tmp/wait-for-it.sh minio:9000;
+            /usr/bin/mc alias set minio http://minio:9000 ${AWS_ACCESS_KEY_ID} ${AWS_SECRET_ACCESS_KEY};
+            /usr/bin/mc mb minio/${S3_MLFLOW_BUCKET};
+            exit 0;
+            "
+        volumes:
+            - ./wait-for-it.sh:/tmp/wait-for-it.sh
+    mysql:
+        restart: always
+        image: mysql:8.0.31
+        container_name: mlflow_db
+        ports:
+            - "3306:3306"
+        networks:
+            mlops-net:
+                ipv4_address: 10.0.2.3
+        env_file:
+            - .env
+        environment:
+            - MYSQL_DATABASE=${MYSQL_DATABASE}
+            - MYSQL_USER=${MYSQL_USER}
+            - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+            - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+            - MYSQL_ROOT_HOST="%"
+        volumes:
+            - dbdata:/var/lib/mysql
+            # Directory with *sql files to initialize DB
+            - "${PWD}/sql_scripts:/docker-entrypoint-initdb.d"
+        command: --authentication_policy=mysql_native_password
+    mlflow:
+        restart: always
+        build: ./mlflow
+        image: mlflow_server
+        container_name: mlflow_server
+        ports:
+            - "5000:5000"
+        networks:
+            mlops-net:
+                ipv4_address: 10.0.2.4
+        env_file:
+            - .env
+        environment:
+            - S3_MLFLOW_BUCKET=${S3_MLFLOW_BUCKET}
+            - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
+            - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+            - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+        command: mlflow server --backend-store-uri mysql+pymysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE} --artifacts-destination s3://${S3_MLFLOW_BUCKET}/ --serve-artifacts --host 0.0.0.0
+    gitea:
+        restart: always
+        image: gitea/gitea:1.16.0
+        container_name: gitea
+        environment:
+         - USER_UID=1000
+         - USER_GID=1000
+         - GITEA__database__DB_TYPE=mysql
+         - GITEA__database__HOST=mysql:3306
+         - GITEA__database__NAME=gitea
+         - GITEA__database__USER=gitea
+         - GITEA__database__PASSWD=gitea
+         - GITEA__webhook__ALLOWED_HOST_LIST=*
+        networks:
+            mlops-net:
+                ipv4_address: 10.0.2.5
+        env_file:
+            - .env
+        volumes:
+         - ./gitea:/data
+         - /etc/timezone:/etc/timezone:ro
+         - /etc/localtime:/etc/localtime:ro
+        ports:
+         - "3000:3000"
+         - "222:22"
+        depends_on:
+         - mysql
+    jenkins:
+        restart: always
+        build: ./jenkins
+        image: jenkins_server
+        container_name: jenkins
+        ports:
+            - "8080:8080"
+            - "50000:50000"
+        networks:
+            mlops-net:
+                ipv4_address: 10.0.2.6
+        env_file:
+            - .env
+        volumes:
+         - jenkins_home:/var/jenkins_home
+         - "/var/run/docker.sock:/var/run/docker.sock"
+    prod:
+        build: ./prod
+        image: prod_server
+        container_name: prod_server
+        hostname: prod_server
+        privileged: true
+        ports:
+            - "8000:8000"
+            - "2222:22"
+        networks:
+            mlops-net:
+               ipv4_address: 10.0.2.7
+        env_file:
+            - .env
+        volumes:
+            - ./prod/home/.ssh:/home/prod_user/.ssh
+        environment:
+            - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
+            - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+            - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+    test:
+        build: ./test
+        image: test_server
+        container_name: test_server
+        hostname: test_server
+        privileged: true
+        ports:
+            - "8001:8001"
+            - "2223:22"
+        networks:
+            mlops-net:
+              ipv4_address: 10.0.2.8
+        env_file:
+            - .env
+        volumes:
+            - ./test/home/.ssh:/home/test_user/.ssh
+        environment:
+            - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
+            - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+            - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+volumes:
+    dbdata:
+    minio_data:
+    jenkins_home:
