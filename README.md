@@ -5,4 +5,4 @@ This is the final step/project of my journey through MLOps bootcamp, where I've 
 ## Architecture
 ![Simple Architecture](./images/architecture.png)
 
-## 2.2 Installation
+## Installation
